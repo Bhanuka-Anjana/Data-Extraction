@@ -35,7 +35,8 @@ def scrape_dexscreener_tokens_sb(url, wait_time_after_bypass=10, wait_before_cap
         print(f"Warning: Error during initial request: {e}. Proceeding with SeleniumBase.")
         # return [] # Optionally exit here
 
-    token_addresses = set() # Use a set for automatic duplicate handling
+    # create a list that stores dictionaries of token info
+    token_addresses = []
 
     try:
         # Use SB context manager for automatic driver management and UC mode
@@ -96,7 +97,25 @@ def scrape_dexscreener_tokens_sb(url, wait_time_after_bypass=10, wait_before_cap
                     if match:
                         token_address = match.group(1)
                         if 32 <= len(token_address) <= 44:
-                            token_addresses.add(token_address)
+                            #get the each token name
+                            token_name = img.find_next('span', class_='ds-dex-table-row-base-token-name-text').text.strip()
+                            
+                            # get the each token market cap, liquidity, and volume
+                            market_cap = img.find_next('div', class_='ds-dex-table-row-col-market-cap').text.strip()
+                            liquidity = img.find_next('div', class_='ds-dex-table-row-col-liquidity').text.strip()
+                            volume = img.find_next('div', class_='ds-dex-table-row-col-volume').text.strip()
+                            
+                            # create a dictionary for each token
+                            token_info = {
+                                'address': token_address,
+                                'name': token_name,
+                                'market_cap': market_cap,
+                                'liquidity': liquidity,
+                                'volume': volume,
+                            }
+                            
+                            token_addresses.append(token_info)
+                            
                         else:
                             print(f"  - Possible invalid length found: {token_address} in {src}")
 
@@ -119,7 +138,7 @@ if __name__ == "__main__":
     if tokens:
         print("\n--- Found Solana Token Addresses ---")
         for i, token in enumerate(tokens):
-            print(f"{i+1}. {token}")
+            print(f"{i+1}. Address: {token['address']}, Name: {token['name']}, Market Cap: {token['market_cap']}, Liquidity: {token['liquidity']}, Volume: {token['volume']}")
         print(f"\nTotal unique addresses found: {len(tokens)}")
     else:
         print("\nNo token addresses were scraped. Check logs for errors or Cloudflare issues.")
