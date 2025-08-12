@@ -1,0 +1,6 @@
+selenium==4.34.2
+seleniumbase==4.40.8
+beautifulsoup4==4.13.4
+redis==6.4.0
+mysql-connector-python==9.4.0
+pytz==2025.2
