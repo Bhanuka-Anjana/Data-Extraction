@@ -201,4 +201,4 @@ if __name__ == "__main__":
             dprint(f"ERROR: {e}")
         # # small jitter
         # sleep_s = INTERVAL_SEC + random.randint(-5, 5)
-        # time.sleep(max(15, sleep_s))
+        time.sleep(60*5)

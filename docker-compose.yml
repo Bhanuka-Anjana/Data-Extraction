@@ -11,20 +11,20 @@ services:
       timeout: 3s
       retries: 10
   
-  mysql:
-    image: mysql:8.4
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_PASS}
-      MYSQL_DATABASE: ${MYSQL_DB}
-    ports:
-      - "3306:3306"     # or "3307:3306" if 3306 is busy on host
-    volumes:
-      - mysqldata:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_PASS}"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
+  # mysql:
+  #   image: mysql:8.4
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_PASS}
+  #     MYSQL_DATABASE: ${MYSQL_DB}
+  #   ports:
+  #     - "3306:3306"     # or "3307:3306" if 3306 is busy on host
+  #   volumes:
+  #     - mysqldata:/var/lib/mysql
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_PASS}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 20
 
   trending:
     build: .
@@ -42,8 +42,8 @@ services:
   trader:
     build: .
     depends_on:
-      mysql:
-        condition: service_healthy
+      # mysql:
+      #   condition: service_healthy
       redis:
         condition: service_healthy
     env_file: .env
@@ -54,6 +54,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASS: ${MYSQL_PASS}
       MYSQL_DB:   ${MYSQL_DB}
+      DB_URL: ${AIVEN_DATABASE_URL}
     command: ["python", "-u", "trader-extractor-redis.py"]
     restart: unless-stopped
 

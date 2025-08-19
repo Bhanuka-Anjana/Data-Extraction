@@ -8,17 +8,32 @@ import re
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
 from seleniumbase import SB
-from mysql.connector.pooling import MySQLConnectionPool
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import urllib.parse
+
+db_url = os.getenv("DB_URL")  # Set this in your .env file
+
+if not db_url:
+    raise RuntimeError("DB_URL environment variable is required")
+
+url = urllib.parse.urlparse(db_url)
+
+sqldb = mysql.connector.connect(
+    host=url.hostname,
+    port=url.port,
+    user=url.username,
+    password=url.password,
+    database=url.path.lstrip("/"),
+    ssl_disabled=False
+)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-DB_CFG = {
-    "host": os.getenv("MYSQL_HOST", "127.0.0.1"),  # use IP, not 'localhost'
-    "port": int(os.getenv("MYSQL_PORT", "3306")),
-    "user": os.getenv("MYSQL_USER", "root"),
-    "password": os.getenv("MYSQL_PASS", "1234"),
-    "database": os.getenv("MYSQL_DB", "solana_tokens"),
-}
+# DB_CFG = {
+#     "host": os.getenv("MYSQL_HOST", "127.0.0.1"),  # use IP, not 'localhost'
+#     "port": int(os.getenv("MYSQL_PORT", "3306")),
+#     "user": os.getenv("MYSQL_USER", "root"),
+#     "password": os.getenv("MYSQL_PASS", "1234"),
+#     "database": os.getenv("MYSQL_DB", "solana_tokens"),
+# }
 EVENT_CHANNEL = "token_changed"
 DEDUPE_SET = "processed_event_ids"  # Redis set for idempotency
 DEDUPE_TTL = 600  # seconds
@@ -29,14 +44,14 @@ K_WINDOW_VER = "trending:window:{ver}"       # JSON array by version
 
 r = redis.from_url(REDIS_URL, decode_responses=True)
 
-sqldb = mysql.connector.connect(
-    host=DB_CFG["host"],
-    port=DB_CFG["port"],
-    user=DB_CFG["user"],
-    password=DB_CFG["password"],
-    database=DB_CFG["database"],
-    ssl_disabled=False
-)
+# sqldb = mysql.connector.connect(
+#     host=DB_CFG["host"],
+#     port=DB_CFG["port"],
+#     user=DB_CFG["user"],
+#     password=DB_CFG["password"],
+#     database=DB_CFG["database"],
+#     ssl_disabled=False
+# )
 
 sql_cursor = sqldb.cursor()
 
@@ -146,6 +161,14 @@ def _process_one_token(token_address: str):
                             # debug_print(f"Found href: {href}")
                             # https://solscan.io/account/8Hw9X9UwBso7Sp2CFnEEeUGW8pGDj9wghc78ccWFZWpU get the last part of the href
                             wallet_address = href.split('/')[-1]
+
+                            # check wallet address already exists in the database, if yes -> skip
+                            sql_cursor.execute("SELECT COUNT(*) FROM traders WHERE wallet_address = %s", (wallet_address,))
+                            exists = sql_cursor.fetchone()[0] > 0
+
+                            if exists:
+                                dprint(f"Wallet address {wallet_address} already exists in the database, skipping.")
+                                continue
 
                             # get the trader's gross profit, win rate, wins, losses, etc.
                             target_url = f"https://dexcheck.ai/app/wallet-analyzer/{wallet_address}"
@@ -272,3 +295,21 @@ if __name__ == "__main__":
         for tok in snapshot:
             _process_one_token(tok['contract'])
     dprint("Initial sync complete")
+
+    # Subscribe to Redis channel for token changes
+    p = r.pubsub(ignore_subscribe_messages=True)
+    p.subscribe("token_changed")
+
+    for message in p.listen():
+            # payload = {
+            #     "event_id": f"{chain}:{contract}:{window_version}:{change_type}:{old_rank}:{new_rank}",
+            #     "as_of": as_of.isoformat(),
+            #     "change_type": change_type,
+            #     "chain": chain,
+            #     "contract": contract,
+            #     "old_rank": old_rank,
+            #     "new_rank": new_rank,
+            #     "window_version": window_version
+            # }
+
+            dprint(f"Received message: {message}")
