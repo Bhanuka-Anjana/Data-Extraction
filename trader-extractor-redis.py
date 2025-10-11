@@ -192,10 +192,28 @@ def _process_one_token(token_address: str):
 
                             soup = BeautifulSoup(page_source, 'html.parser')
 
+                            # --- Check if the wallet is bot? if bot the name is like this "Bot (gasTzr94Pmp4Gf8vknQnqxeYxdgwFjbgdJa4msYRpnB)"
+                            # begin with Bot 
+                            bot_tag = soup.find('span', string=re.compile(r"^Bot\s*\(", flags=re.I))
+
                             # --- Gross Profit ---
                             gross_profit = soup.find('h3', string=re.compile(r"Gross Profit", flags=re.I))
                             if gross_profit:
                                 gross_profit_value = parse_number(gross_profit.find_next('p').text.strip())
+
+                            # -- Realized Profit ---
+                            realized_profit = soup.find('p', string=re.compile(r"Realized", flags=re.I))
+                            if realized_profit:
+                                realized_profit_str = realized_profit.find_next('p').text.strip()
+                                realized_profit_value = realized_profit_str.split(" ")[0].replace(",", "").replace("$", "")
+                                realized_profit_percent = realized_profit_str.split(" ")[1].replace("(", "").replace(")", "").replace("%", "")
+
+                            # --- Unrealized Profit ---
+                            unrealized_profit = soup.find('p', string=re.compile(r"Unrealized", flags=re.I))
+                            if unrealized_profit:
+                                unrealized_profit_str = unrealized_profit.find_next('p').text.strip()
+                                unrealized_profit_value = unrealized_profit_str.split(" ")[0].replace(",", "").replace("$", "")
+                                unrealized_profit_percent = unrealized_profit_str.split(" ")[1].replace("(", "").replace(")", "").replace("%", "")
 
                             # --- Win Rate ---
                             win_rate = soup.find('h3', string=re.compile(r"Win Rate", flags=re.I))
@@ -223,24 +241,32 @@ def _process_one_token(token_address: str):
                             avg_trade_size = soup.find('p', string=re.compile(r"Avg. Trade Size", flags=re.I))
                             if avg_trade_size:
                                 avg_trade_size_value = parse_number(avg_trade_size.find_next('p').text.strip())
-                            dprint(f"Extracted data for wallet {wallet_address} in token {token_address}: "
+                            dprint(f"Is bot: {bot_tag is not None} "
+                                f"Wallet {wallet_address} token {token_address}: "
                                 f"Gross Profit: {gross_profit_value}, Win Rate: {win_rate_value}, "
+                                f"Realized Profit: {realized_profit_value}, Unrealized Profit: {unrealized_profit_value}, "
+                                f"Realized Profit (%): {realized_profit_percent}, Unrealized Profit (%): {unrealized_profit_percent}, "
                                 f"Wins: {win_value}, Losses: {loss_value}, Trading Volume: {trade_volume_value}, "
-                                f"Trades: {trades_value}, Avg. Trade Size: {avg_trade_size_value}")
+                                f"Trades: {trades_value}, Avg. Trade Size: {avg_trade_size_value} \n")
                             
                             # save to MySQL if already exists update the parameters
                             sql_cursor.execute("""
-                                INSERT INTO traders (wallet_address, token_address, gross_profit, win_rate, wins, losses, trade_volume, trades, avg_trade_size)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                INSERT INTO traders (wallet_address, token_address, gross_profit, win_rate, realized_profit, unrealized_profit, realized_profit_percent, unrealized_profit_percent, wins, losses, trade_volume, trades, avg_trade_size, is_bot)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 ON DUPLICATE KEY UPDATE
                                     gross_profit = VALUES(gross_profit),
                                     win_rate = VALUES(win_rate),
+                                    realized_profit = VALUES(realized_profit),
+                                    unrealized_profit = VALUES(unrealized_profit),
+                                    realized_profit_percent = VALUES(realized_profit_percent),
+                                    unrealized_profit_percent = VALUES(unrealized_profit_percent),
                                     wins = VALUES(wins),
                                     losses = VALUES(losses),
                                     trade_volume = VALUES(trade_volume),
                                     trades = VALUES(trades),
-                                    avg_trade_size = VALUES(avg_trade_size)
-                            """, (wallet_address, token_address, gross_profit_value, win_rate_value, win_value, loss_value, trade_volume_value, trades_value, avg_trade_size_value))
+                                    avg_trade_size = VALUES(avg_trade_size),
+                                    is_bot = VALUES(is_bot)
+                            """, (wallet_address, token_address, gross_profit_value, win_rate_value, realized_profit_value, unrealized_profit_value, realized_profit_percent, unrealized_profit_percent, win_value, loss_value, trade_volume_value, trades_value, avg_trade_size_value, bot_tag is not None))
                             sqldb.commit()
 
                     dprint(f"Extracted wallet data from {token_address}")
@@ -276,14 +302,19 @@ if __name__ == "__main__":
                 wallet_address VARCHAR(44) PRIMARY KEY,
                 token_address VARCHAR(44),
                 gross_profit DECIMAL(20, 2),
+                realized_profit DECIMAL(20, 2),
+                realized_profit_percent DECIMAL(5, 2),
+                unrealized_profit DECIMAL(20, 2),
+                unrealized_profit_percent DECIMAL(5, 2),
                 win_rate DECIMAL(5, 2),
                 wins INT,
                 losses INT,
                 trade_volume DECIMAL(20, 2),
                 trades INT,
-                avg_trade_size DECIMAL(20, 2)
+                avg_trade_size DECIMAL(20, 2),
+                is_bot BOOLEAN      
             )
-                        """)
+                    """)
         sqldb.commit()
     except mysql.connector.Error as err:
         dprint(f"Error initializing MySQL: {err}")
