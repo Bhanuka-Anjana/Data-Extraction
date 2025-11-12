@@ -51,60 +51,61 @@ def scrape_token_info(addr: str) -> dict:
     logo_img = soup.find('img', src=re.compile(r'cdn\.dexscreener\.com/cms/images/'))
     logo_url = logo_img['src'] if logo_img else None
     
-    # Extract token name
-    # There can be many divs with class 'chakra-stack'. We want the one
-    # that contains an h2.chakra-heading > span (token name).
-    name_elem = None
-    candidates = []
-    for div in soup.find_all('div', class_='chakra-stack'):
+    # Extract token name (prefer header structure)
+    # 1) Look inside <header> that has (itself or descendants) class 'chakra-stack'
+    #    and contains h2.chakra-heading.
+    header_candidates = []
+    for hdr in soup.find_all('header'):
+        has_stack = ('chakra-stack' in (hdr.get('class') or [])) or bool(hdr.find(class_='chakra-stack'))
+        if not has_stack:
+            continue
+        h2 = hdr.find('h2', class_='chakra-heading')
+        if not h2:
+            continue
+        span = h2.find('span')
+        text = (span.get_text(strip=True) if span else h2.get_text(strip=True))
+        if text and 1 <= len(text) <= 120:
+            header_candidates.append((hdr, h2, text))
+
+    if not header_candidates:
+        dprint("Name pattern debug (header): No <header> with chakra-stack and h2.chakra-heading found")
+    else:
+        dprint(f"Name pattern debug (header): Found {len(header_candidates)} candidates")
+        for idx, (_, _, txt) in enumerate(header_candidates):
+            dprint(f"  [H{idx}] {txt}")
+
+    # Extract token symbol (prefer element structure)
+    # 1) Look inside <div> that has (itself or descendants) class 'chakra-stack'
+    #    and contains h2.chakra-heading. 
+    #  h2 contains span with symbol text.
+    symbol_candidates = []
+    for div in soup.find_all('div'):
+        has_stack = ('chakra-stack' in (div.get('class') or [])) or bool(div.find(class_='chakra-stack'))
+        if not has_stack:
+            continue
         h2 = div.find('h2', class_='chakra-heading')
         if not h2:
             continue
         span = h2.find('span')
-        if not span:
-            continue
-        text = span.get_text(strip=True)
-        if not text:
-            continue
-        # Heuristics: ignore overly long strings and ones with whitespace-only
-        if 1 <= len(text) <= 80:
-            candidates.append((div, span, text))
+        text = (span.get_text(strip=True) if span else h2.get_text(strip=True))
+        if text and 1 <= len(text) <= 20:
+            symbol_candidates.append((div, h2, text))
 
-    # Prefer a candidate that also sits close to a known logo_img ancestor
-    chosen_text = None
-    if candidates:
-        if logo_img:
-            # Walk up parents of logo_img to find a chakra-stack container
-            logo_anc = None
-            parent = logo_img.parent
-            while parent is not None:
-                if getattr(parent, 'name', None) == 'div' and 'chakra-stack' in parent.get('class', []):
-                    logo_anc = parent
-                    break
-                parent = getattr(parent, 'parent', None)
-
-            if logo_anc is not None:
-                # Choose the first candidate under the same chakra-stack ancestor
-                for div, span, text in candidates:
-                    if div is logo_anc or logo_anc in div.parents:
-                        chosen_text = text
-                        break
-
-        # Fallback: choose the first reasonable candidate
-        if not chosen_text:
-            chosen_text = candidates[0][2]
-
-    if chosen_text:
-        dprint(f"Token Name (chosen): {chosen_text}")
+    if not symbol_candidates:
+        dprint("Symbol pattern debug (div): No <div> with chakra-stack and h2.chakra-heading found")
     else:
-        dprint("Token Name not found via structured pattern")
+        dprint(f"Symbol pattern debug (div): Found {len(symbol_candidates)} candidates")
+        for idx, (_, _, txt) in enumerate(symbol_candidates):
+            dprint(f"  [S{idx}] {txt}")
     
     token_data = {
-        'contract': addr.split('/')[-1],  
-        'name': chosen_text if chosen_text else 'Unknown',
+        # store the contract address in simple letter form
+        'contract': addr.split('/')[-1].lower(),
+        'name': header_candidates[0][2] if header_candidates else None,
+        'symbol': symbol_candidates[0][2] if symbol_candidates else None,
         'logo_url': logo_url
     }
-    
+
     return token_data
 
 @app.route('/token/<token_address>', methods=['GET'])
@@ -120,7 +121,8 @@ def get_token_info(token_address: str):
         token_data = {
             'contract': result['contract'],
             'logo_url': result['thumbnail'],
-            'name': result['name']
+            'name': result['name'],
+            'symbol': result['symbol']
         }
         return jsonify(token_data)
     else:
@@ -133,12 +135,13 @@ def get_token_info(token_address: str):
             cursor = sqldb.cursor(buffered=True)
             cursor.execute("USE solana_tokens")
             cursor.execute("""
-                INSERT INTO tokens (contract, name, thumbnail)
-                VALUES (%s, %s, %s)
+                INSERT INTO tokens (contract, name, symbol, thumbnail)
+                VALUES (%s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
+                    symbol = VALUES(symbol),
                     thumbnail = VALUES(thumbnail)
-            """, (token_data['contract'], token_data['name'], token_data['logo_url']))
+            """, (token_data['contract'], token_data['name'], token_data['symbol'], token_data['logo_url']))
             sqldb.commit()
             cursor.close()
             return jsonify(token_data)
@@ -152,10 +155,10 @@ if __name__ == "__main__":
         sql_cursor.execute("USE solana_tokens")
         sql_cursor.execute("""
             CREATE TABLE IF NOT EXISTS tokens (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                contract VARCHAR(64) PRIMARY KEY,
                 chain VARCHAR(10),
-                contract VARCHAR(64),
                 name VARCHAR(255),
+                symbol VARCHAR(50),
                 market_cap DOUBLE,
                 liquidity DOUBLE,
                 volume DOUBLE,

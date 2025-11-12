@@ -107,8 +107,9 @@ def scrape_trending_topN(n: int) -> List[Dict]:
 
         # extract the token information
         contract = m.group(1)
+        contract = contract.lower()
         name = (row.select_one(".ds-dex-table-row-base-token-name-text") or {}).get_text(strip=True) if row.select_one(".ds-dex-table-row-base-token-name-text") else None
-        symbol = (row.select_one(".ds-dex-table-row-base-token-symbol-text") or {}).get_text(strip=True) if row.select_one(".ds-dex-table-row-base-token-symbol-text") else None
+        symbol = (row.select_one(".ds-dex-table-row-base-token-symbol") or {}).get_text(strip=True) if row.select_one(".ds-dex-table-row-base-token-symbol") else None
         mc_node = row.select_one(".ds-dex-table-row-col-market-cap")
         liq_node = row.select_one(".ds-dex-table-row-col-liquidity")
         vol_node = row.select_one(".ds-dex-table-row-col-volume") 
@@ -121,18 +122,20 @@ def scrape_trending_topN(n: int) -> List[Dict]:
         if DB_WRITE:
             try:
                 sql_cursor.execute("""
-                    INSERT INTO tokens (chain, contract, name,  market_cap, liquidity, volume,  thumbnail)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO tokens (contract, chain, name, symbol, market_cap, liquidity, volume, thumbnail)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         name=VALUES(name),
+                        symbol=VALUES(symbol),
                         market_cap=VALUES(market_cap),
                         liquidity=VALUES(liquidity),
                         volume=VALUES(volume),
                         thumbnail=VALUES(thumbnail)
                 """, (
-                    CHAIN,
                     contract,
+                    CHAIN,
                     name,
+                    symbol,
                     parse_num(market_cap),
                     parse_num(liquidity),
                     parse_num(volume),
@@ -249,10 +252,10 @@ if __name__ == "__main__":
         sql_cursor.execute("USE solana_tokens")
         sql_cursor.execute("""
             CREATE TABLE IF NOT EXISTS tokens (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                contract VARCHAR(64) PRIMARY KEY,
                 chain VARCHAR(10),
-                contract VARCHAR(64),
                 name VARCHAR(255),
+                symbol VARCHAR(50),
                 market_cap DOUBLE,
                 liquidity DOUBLE,
                 volume DOUBLE,
