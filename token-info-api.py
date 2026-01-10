@@ -117,13 +117,27 @@ def scrape_token_info(addr: str) -> dict:
     if not pair_address:
         dprint("Pair Address pattern debug: No matching div with button and anchor found")
 
+    # Extract Mintable status
+    mintable_status = None
+    mintable_label = soup.find('p', string='Mintable')
+    if mintable_label:
+        parent_div = mintable_label.find_parent('div')
+        if parent_div:
+            value_div = parent_div.find_next_sibling('div')
+            if value_div:
+                 value_p = value_div.find('p')
+                 if value_p:
+                     mintable_status = value_p.get_text(strip=True)
+                     dprint(f"Found Mintable Status: {mintable_status}")
+
     token_data = {
         # store the contract address in simple letter form
         'contract': addr.split('/')[-1].lower(),
         'name': header_candidates[0][2] if header_candidates else None,
         'symbol': symbol_candidates[0][2] if symbol_candidates else None,
         'logo_url': logo_url,
-        'pair_address': pair_address
+        'pair_address': pair_address,
+        'mintable': mintable_status
     }
 
     return token_data
