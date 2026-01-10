@@ -110,43 +110,14 @@ def scrape_token_info(addr: str) -> dict:
 
 @app.route('/token/<token_address>', methods=['GET'])
 def get_token_info(token_address: str):
-    # Check if token exists in DB
-    cursor = sqldb.cursor(dictionary=True, buffered=True)
-    cursor.execute("USE solana_tokens")
-    cursor.execute("SELECT * FROM tokens WHERE contract = %s", (token_address,))
-    result = cursor.fetchone()
-    cursor.close()
-
-    if result:
-        token_data = {
-            'contract': result['contract'],
-            'logo_url': result['thumbnail'],
-            'name': result['name'],
-            'symbol': result['symbol']
-        }
+    # Scrape from dexscreener
+    addr = f"https://dexscreener.com/solana/{token_address}"
+    token_data = scrape_token_info(addr)
+    
+    if token_data:            
         return jsonify(token_data)
     else:
-        # Scrape from dexscreener
-        addr = f"https://dexscreener.com/solana/{token_address}"
-        token_data = scrape_token_info(addr)
-        
-        if token_data:
-            # Insert into DB
-            cursor = sqldb.cursor(buffered=True)
-            cursor.execute("USE solana_tokens")
-            cursor.execute("""
-                INSERT INTO tokens (contract, name, symbol, thumbnail)
-                VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    name = VALUES(name),
-                    symbol = VALUES(symbol),
-                    thumbnail = VALUES(thumbnail)
-            """, (token_data['contract'], token_data['name'], token_data['symbol'], token_data['logo_url']))
-            sqldb.commit()
-            cursor.close()
-            return jsonify(token_data)
-        else:
-            return jsonify({"error": "Failed to scrape token data"}), 500
+        return jsonify({"error": "Failed to scrape token data"}), 500
 
 if __name__ == "__main__":
     # Use tokens table in solana_tokens DB

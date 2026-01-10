@@ -29,11 +29,10 @@ RUN python -m pip install --upgrade pip wheel setuptools \
   && pip install -r requirements.txt
 
 # Copy code
-COPY new-token-extractor-redis.py trader-extractor-redis.py /app/
+COPY new-token-extractor-redis.py trader-extractor-redis.py token-info-api.py /app/
 
 # Point undetected-chromedriver to Chrome
 ENV UC_CHROME_BINARY=/usr/bin/google-chrome
 
 # Default command overridden by compose services
 CMD ["python", "-u", "new-token-extractor-redis.py"]
-CMD ["python", "-u", "trader-extractor-redis.py"]
