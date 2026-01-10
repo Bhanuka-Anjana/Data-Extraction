@@ -117,7 +117,6 @@ def scrape_token_info(addr: str) -> dict:
     if not pair_address:
         dprint("Pair Address pattern debug: No matching div with button and anchor found")
 
-
     token_data = {
         # store the contract address in simple letter form
         'contract': addr.split('/')[-1].lower(),
@@ -142,25 +141,25 @@ def get_token_info(token_address: str):
 
 if __name__ == "__main__":
     # Use tokens table in solana_tokens DB
-    try:
-        sql_cursor = sqldb.cursor(buffered=True)
-        sql_cursor.execute("USE solana_tokens")
-        sql_cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tokens (
-                contract VARCHAR(64) PRIMARY KEY,
-                chain VARCHAR(10),
-                name VARCHAR(255),
-                symbol VARCHAR(50),
-                market_cap DOUBLE,
-                liquidity DOUBLE,
-                volume DOUBLE,
-                thumbnail VARCHAR(255)
-            )
-                    """)
-        sqldb.commit()
-        sql_cursor.close()
-    except mysql.connector.Error as err:
-        print(f"Error initializing MySQL: {err}")
-        exit(1)
+    # try:
+    #     sql_cursor = sqldb.cursor(buffered=True)
+    #     sql_cursor.execute("USE solana_tokens")
+    #     sql_cursor.execute("""
+    #         CREATE TABLE IF NOT EXISTS tokens (
+    #             contract VARCHAR(64) PRIMARY KEY,
+    #             chain VARCHAR(10),
+    #             name VARCHAR(255),
+    #             symbol VARCHAR(50),
+    #             market_cap DOUBLE,
+    #             liquidity DOUBLE,
+    #             volume DOUBLE,
+    #             thumbnail VARCHAR(255)
+    #         )
+    #                 """)
+    #     sqldb.commit()
+    #     sql_cursor.close()
+    # except mysql.connector.Error as err:
+    #     print(f"Error initializing MySQL: {err}")
+    #     exit(1)
 
     app.run(host='0.0.0.0', port=5000, debug=True)
