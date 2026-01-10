@@ -97,13 +97,34 @@ def scrape_token_info(addr: str) -> dict:
         dprint(f"Symbol pattern debug (div): Found {len(symbol_candidates)} candidates")
         for idx, (_, _, txt) in enumerate(symbol_candidates):
             dprint(f"  [S{idx}] {txt}")
-    
+
+    # find Pair Address 
+    # 01. there are two sibiling elements which aire button and anchor
+    # 02. anchor contains href (like - "https://solscan.io/account/7AHvKNXx95BCGita89J9LgvdENfS7feRk8L4Zztn4Cj1")
+
+    pair_address = None
+    siblings = soup.find_all('div')
+
+    for div in siblings:
+        button = div.find('button')
+        anchor = div.find('a', href=True)
+        if button and anchor:
+            href = anchor['href']
+            if 'solscan.io/account/' in href:
+                pair_address = href.split('/')[-1]
+                dprint(f"Found Pair Address: {pair_address}")
+                break
+    if not pair_address:
+        dprint("Pair Address pattern debug: No matching div with button and anchor found")
+
+
     token_data = {
         # store the contract address in simple letter form
         'contract': addr.split('/')[-1].lower(),
         'name': header_candidates[0][2] if header_candidates else None,
         'symbol': symbol_candidates[0][2] if symbol_candidates else None,
-        'logo_url': logo_url
+        'logo_url': logo_url,
+        'pair_address': pair_address
     }
 
     return token_data
