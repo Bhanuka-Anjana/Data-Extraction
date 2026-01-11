@@ -328,17 +328,15 @@ if __name__ == "__main__":
     p.subscribe("token_changed")
 
     for message in p.listen():
-            # payload = {
-            #     "event_id": f"{chain}:{contract}:{window_version}:{change_type}:{old_rank}:{new_rank}",
-            #     "as_of": as_of.isoformat(),
-            #     "change_type": change_type,
-            #     "chain": chain,
-            #     "contract": contract,
-            #     "old_rank": old_rank,
-            #     "new_rank": new_rank,
-            #     "window_version": window_version
-            # }
-
-            _process_one_token(message['contract'])
-
-            dprint(f"Received message: {message}")
+        # Parse the 'data' field if it exists
+        if 'data' in message:
+            try:
+                parsed_data = json.loads(message['data'])
+                if 'contract' in parsed_data:
+                    _process_one_token(parsed_data['contract'])
+                else:
+                    dprint("Warning: 'contract' key missing in parsed data")
+            except json.JSONDecodeError as e:
+                dprint(f"Error decoding JSON: {e}")
+        else:
+            dprint("Warning: 'data' field missing in message")
