@@ -279,7 +279,6 @@ def _process_one_token(token_address: str):
         dprint(f"An error occurred during SeleniumBase scraping: {e}")
         # Consider adding sb.save_screenshot_to_logs() here too on error
 
-
 if __name__ == "__main__":
     dprint("Starting trader-extractor-redis.py...")
 

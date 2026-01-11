@@ -48,7 +48,8 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      REDIS_URL: ${REDIS_URL}
+      TZ: ${TZ}
+      REDIS_URL: redis://redis:6379/0
       MYSQL_HOST: ${MYSQL_HOST}
       MYSQL_PORT: ${MYSQL_PORT}
       MYSQL_USER: ${MYSQL_USER}
