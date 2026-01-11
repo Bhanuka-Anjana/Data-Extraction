@@ -165,14 +165,11 @@ def scrape_trending_topN(n: int) -> List[Dict]:
     # dprint(f"Scraped {len(out)} tokens")
     return out
 
-# implementing hashmap functionality to find the difference between the previous and current list of tokens
 def compute_diff(prev: List[Dict], curr: List[Dict], rank_move_threshold: int):
-    # indexing
     prev_idx = {(t["chain"], t["contract"]): t["rank"] for t in prev}
     curr_idx = {(t["chain"], t["contract"]): t["rank"] for t in curr}
     prev_keys, curr_keys = set(prev_idx.keys()), set(curr_idx.keys())
 
-    # finding the difference using SET operations
     added = [(k, curr_idx[k]) for k in (curr_keys - prev_keys)]
     removed = [(k, prev_idx[k]) for k in (prev_keys - curr_keys)]
     moved = []

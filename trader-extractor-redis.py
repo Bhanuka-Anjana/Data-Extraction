@@ -1,21 +1,24 @@
+#  redis-server --daemonize yes
 import os
 import json
 import threading
 import mysql.connector
 import redis
 import re
-import queue
-import time
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
 from seleniumbase import SB
 import urllib.parse
 
 DB_WRITE = True  # Set to False to disable DB writes (for testing)
+
 db_url = os.getenv("DB_URL")  # Set this in your .env file
+
 if not db_url:
     raise RuntimeError("DB_URL environment variable is required")
+
 url = urllib.parse.urlparse(db_url)
+
 sqldb = mysql.connector.connect(
     host=url.hostname,
     port=url.port,
@@ -24,19 +27,35 @@ sqldb = mysql.connector.connect(
     database=url.path.lstrip("/"),
     ssl_disabled=False
 )
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-r = redis.from_url(REDIS_URL, decode_responses=True)
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# DB_CFG = {
+#     "host": os.getenv("MYSQL_HOST", "127.0.0.1"),  # use IP, not 'localhost'
+#     "port": int(os.getenv("MYSQL_PORT", "3306")),
+#     "user": os.getenv("MYSQL_USER", "root"),
+#     "password": os.getenv("MYSQL_PASS", "1234"),
+#     "database": os.getenv("MYSQL_DB", "solana_tokens"),
+# }
+EVENT_CHANNEL = "token_changed"
+DEDUPE_SET = "processed_event_ids"  # Redis set for idempotency
+DEDUPE_TTL = 600  # seconds
+
+K_CUR = "trending:window:current"            # JSON array (latest-only snapshot)
 K_LATEST_VER = "trending:latest_version"     # string int
 K_WINDOW_VER = "trending:window:{ver}"       # JSON array by version
 
-sql_cursor = sqldb.cursor()
+r = redis.from_url(REDIS_URL, decode_responses=True)
 
-# Priority Mapping: Lower number = Higher priority
-PRIORITY_MAP = {"ADDED": 1, "REMOVED": 2}
-task_queue = queue.PriorityQueue()
-cancel_event = threading.Event()
-current_task_info = {"lock": threading.Lock(), "type": None, "contract": None}
+# sqldb = mysql.connector.connect(
+#     host=DB_CFG["host"],
+#     port=DB_CFG["port"],
+#     user=DB_CFG["user"],
+#     password=DB_CFG["password"],
+#     database=DB_CFG["database"],
+#     ssl_disabled=False
+# )
+
+sql_cursor = sqldb.cursor()
 
 DEBUG_PRINT = True  # Set to True for debugging output
 def dprint(message):
@@ -260,86 +279,6 @@ def _process_one_token(token_address: str):
         dprint(f"An error occurred during SeleniumBase scraping: {e}")
         # Consider adding sb.save_screenshot_to_logs() here too on error
 
-def _process_one_token_safe(token_address: str):
-    """Modified version of your scraper with cancellation checks."""
-    url = f"https://dexscreener.com/solana/{token_address}"
-    try:
-        with SB(uc=True, test=True, locale_code="en", headless=True) as sb:
-            # Check 1: Before navigating
-            if cancel_event.is_set(): return
-            
-            sb.activate_cdp_mode(url)
-            sb.sleep(5)
-            
-            try: sb.uc_gui_click_captcha()
-            except: pass
-            
-            if cancel_event.is_set(): return
-            
-            sb.wait_for_element_visible('div.custom-1oq7u8k', timeout=100)
-            sb.click('button:contains("Top Traders")')
-            sb.wait_for_element_visible('a.custom-1hhf88o', timeout=100)
-
-            soup = BeautifulSoup(sb.get_page_source(), 'html.parser')
-            trader_tags = soup.find_all('a', class_='custom-1hhf88o')[:10]
-
-            for tag in trader_tags:
-                # Check 2: Inside the trader loop (Preempt before next wallet)
-                if cancel_event.is_set():
-                    dprint(f"Preempting scraping for {token_address}...")
-                    return
-
-                wallet_address = tag['href'].split('/')[-1]
-                target_url = f"https://dexcheck.ai/app/wallet-analyzer/{wallet_address}"
-                
-                sb.open(target_url)
-                sb.sleep(2)
-                try: sb.uc_gui_click_captcha()
-                except: pass
-                
-                sb.wait_for_element_visible('img.bg-brand-background-highlight', timeout=50)
-                tsoup = BeautifulSoup(sb.get_page_source(), 'html.parser')
-
-                # ... (Parsing logic remains the same as your snippet) ...
-                # Assuming parsed values: gross_profit_value, win_rate_value, etc.
-                # (Extracted from your provided script logic)
-                
-                if DB_WRITE:
-                    # Execute write and commit - this is atomic
-                    sql_cursor.execute("""
-                        INSERT INTO traders (wallet_address, token_address, is_bot)
-                        VALUES (%s, %s, %s)
-                        ON DUPLICATE KEY UPDATE token_address=%s
-                    """, (wallet_address, token_address, False, token_address))
-                    sqldb.commit()
-                    dprint(f"Saved trader {wallet_address}")
-
-    except Exception as e:
-        dprint(f"Scraper error: {e}")
-
-# --- Scheduler Worker ---
-def worker_thread():
-    """Consumes tasks from the priority queue."""
-    while True:
-        priority, task_data = task_queue.get()
-        contract = task_data['contract']
-        change_type = task_data['change_type']
-
-        with current_task_info["lock"]:
-            current_task_info["type"] = change_type
-            current_task_info["contract"] = contract
-        
-        cancel_event.clear()
-        dprint(f"WORKER: Starting {change_type} for {contract}")
-        
-        _process_one_token_safe(contract)
-        
-        with current_task_info["lock"]:
-            current_task_info["type"] = None
-            current_task_info["contract"] = None
-            
-        task_queue.task_done()
-
 if __name__ == "__main__":
     dprint("Starting trader-extractor-redis.py...")
 
@@ -377,39 +316,27 @@ if __name__ == "__main__":
         dprint(f"Error initializing MySQL: {err}")
         exit(1)
 
-    # 1. Get initial sync
+    # get initial sync
     snapshot = load_current_snapshot()
     if snapshot:
         for tok in snapshot:
             _process_one_token(tok['contract'])
     dprint("Initial sync complete")
 
-    # 2. Start Worker Thread
-    t = threading.Thread(target=worker_thread, daemon=True)
-    t.start()
-
-    # 3. Listen to Redis
+    # Subscribe to Redis channel for token changes
     p = r.pubsub(ignore_subscribe_messages=True)
     p.subscribe("token_changed")
-    dprint("Subscriber started. Waiting for events...")
 
     for message in p.listen():
-        try:
-            data = json.loads(message['data'])
-            new_type = data['change_type']
-            new_contract = data['contract']
-            new_priority = PRIORITY_MAP.get(new_type, 3)
+            # payload = {
+            #     "event_id": f"{chain}:{contract}:{window_version}:{change_type}:{old_rank}:{new_rank}",
+            #     "as_of": as_of.isoformat(),
+            #     "change_type": change_type,
+            #     "chain": chain,
+            #     "contract": contract,
+            #     "old_rank": old_rank,
+            #     "new_rank": new_rank,
+            #     "window_version": window_version
+            # }
 
-            with current_task_info["lock"]:
-                curr_type = current_task_info["type"]
-                
-                # PREEMPTION LOGIC: 
-                # If new task is ADDED (1) and current task is REMOVED (2)
-                if new_type == "ADDED" and curr_type == "REMOVED":
-                    dprint(f"!!! PREEMPTING !!! New ADDED task for {new_contract} replacing REMOVED task.")
-                    cancel_event.set()
-            
-            task_queue.put((new_priority, data))
-            
-        except Exception as e:
-            dprint(f"Error processing message: {e}")
+            dprint(f"Received message: {message}")
