@@ -339,4 +339,6 @@ if __name__ == "__main__":
             #     "window_version": window_version
             # }
 
+            _process_one_token(message['contract'])
+
             dprint(f"Received message: {message}")
