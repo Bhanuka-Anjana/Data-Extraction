@@ -243,30 +243,41 @@ def _process_one_token(token_address: str):
                             avg_trade_size = soup.find('p', string=re.compile(r"Avg. Trade Size", flags=re.I))
                             if avg_trade_size:
                                 avg_trade_size_value = parse_number(avg_trade_size.find_next('p').text.strip())
-                            dprint(f"Is bot: {bot_tag is not None} "
-                                f"Wallet {wallet_address} token {token_address}: "
-                                f"Gross Profit: {gross_profit_value}, Win Rate: {win_rate_value}, "
-                                f"Realized Profit: {realized_profit_value}, Unrealized Profit: {unrealized_profit_value}, "
-                                f"Realized Profit (%): {realized_profit_percent}, Unrealized Profit (%): {unrealized_profit_percent}, "
-                                f"Wins: {win_value}, Losses: {loss_value}, Trading Volume: {trade_volume_value}, "
-                                f"Trades: {trades_value}, Avg. Trade Size: {avg_trade_size_value} \n")
+
 
                             if DB_WRITE:
-                                # save to MySQL if already exists update the parameters
-                                sql_cursor.execute("""
-                                    INSERT INTO traders (wallet_address, token_address, gross_profit, realized_profit, 
-                                    realized_profit_percent, unrealized_profit, unrealized_profit_percent, win_rate, wins, losses, 
-                                    trade_volume, trades, avg_trade_size, is_bot)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                    """, (wallet_address, token_address, gross_profit_value, realized_profit_value,
-                                          realized_profit_percent, unrealized_profit_value, unrealized_profit_percent, win_rate_value,
-                                          win_value, loss_value, trade_volume_value, trades_value, avg_trade_size_value,
-                                          bot_tag is not None))
-                                sqldb.commit()
+                                try:
+                                    sql_cursor.execute("""
+                                        INSERT INTO traders (wallet_address, token_address, gross_profit, realized_profit, 
+                                        realized_profit_percent, unrealized_profit, unrealized_profit_percent, win_rate, wins, losses, 
+                                        trade_volume, trades, avg_trade_size, is_bot)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        ON DUPLICATE KEY UPDATE
+                                            token_address=VALUES(token_address),
+                                            gross_profit=VALUES(gross_profit),
+                                            realized_profit=VALUES(realized_profit),
+                                            realized_profit_percent=VALUES(realized_profit_percent),
+                                            unrealized_profit=VALUES(unrealized_profit),
+                                            unrealized_profit_percent=VALUES(unrealized_profit_percent),
+                                            win_rate=VALUES(win_rate),
+                                            wins=VALUES(wins),
+                                            losses=VALUES(losses),
+                                            trade_volume=VALUES(trade_volume),
+                                            trades=VALUES(trades),
+                                            avg_trade_size=VALUES(avg_trade_size),
+                                            is_bot=VALUES(is_bot)
+                                        """, (wallet_address, token_address, gross_profit_value, realized_profit_value,
+                                              realized_profit_percent, unrealized_profit_value, unrealized_profit_percent, win_rate_value,
+                                              win_value, loss_value, trade_volume_value, trades_value, avg_trade_size_value,
+                                              bot_tag is not None))
+                                    sqldb.commit()
+                                    dprint(f"Successfully inserted/updated wallet: {wallet_address}")
+                                except Exception as e:
+                                    dprint(f"Error inserting/updating wallet {wallet_address}: {e}")
 
                                 
 
-                    dprint(f"Extracted wallet data from {token_address}")
+                    # dprint(f"Extracted wallet data from {token_address}")
                     return token_address
                 else:
                     dprint(f"Not enough traders found for token {token_address}")
